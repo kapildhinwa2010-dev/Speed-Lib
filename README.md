@@ -1,5 +1,8 @@
 # Speed-Lib
 
+[![CI](https://github.com/kapildhinwa2010-dev/Speed-Lib/actions/workflows/ci.yml/badge.svg)](https://github.com/kapildhinwa2010-dev/Speed-Lib/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/kapildhinwa2010-dev/Speed-Lib/actions/workflows/codeql.yml/badge.svg)](https://github.com/kapildhinwa2010-dev/Speed-Lib/actions/workflows/codeql.yml)
+
 Reusable timing utilities: best-of-N wall-clock measurement for the toolkit codecs.
 
 ## What it does
