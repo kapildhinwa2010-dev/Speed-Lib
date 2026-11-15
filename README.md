@@ -1,41 +1,33 @@
 # Speed-Lib
 
-Compression benchmark suite.
+Reusable timing utilities: best-of-N wall-clock measurement for the toolkit codecs.
 
-**Part of the [Kapildhinwa2010-dev Toolkit](https://github.com/kapildhinwa2010-dev/Kapildhinwa2010-dev).**
+## What it does
 
-![CI](https://github.com/kapildhinwa2010-dev/Speed-Lib/actions/workflows/ci.yml/badge.svg)
-![CodeQL](https://github.com/kapildhinwa2010-dev/Speed-Lib/actions/workflows/codeql.yml/badge.svg)
-![Python](https://img.shields.io/badge/python-3.9%2B-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+- timed(func, repeats) runs a callable N times and reports min/avg/max
+  wall-clock seconds. min_s is the honest number; avg and max show noise.
+- method_timings(matrix, repeats) times all four toolkit codecs (SVD,
+  quantize, Fourier, hybrid) on one matrix, sorted fastest first.
 
-## ✨ Features
+    from speed_lib import method_timings
 
-- Four strategies: SVD rank, quantization, Fourier basis, hybrid
-- Uniform relative-error reporting
-- One-call `benchmark()` over all methods
+    for row in method_timings(matrix, repeats=5):
+        print(row["method"], round(row["min_s"] * 1000, 3), "ms")
 
-## 📦 Install
+## API
 
-```bash
-pip install -r requirements.txt
-```
+- timed(func, repeats=5) - dict with repeats, min_s, avg_s, max_s
+- method_timings(matrix, repeats=3) - list of dicts, fastest first
+- The four codecs are included so the workload is self-contained.
 
-## 🚀 Quick start
+## Honest results and limitations
 
-```python
-from speed_lib import benchmark
+- Wall-clock timings on shared or cloud machines are noisy; never
+  compare runs with different repeats or machine load. Report min-of-N.
+- These are pure-numpy timings on CPU; they say nothing about GPU or
+  production serving latency.
 
-for result in benchmark(W):
-    print(result['method'], result['relative_error'])
-```
+## Status
 
-## 🧪 Tests
-
-```bash
-pytest tests/ -v
-```
-
-## 📄 License
-
-MIT — see [LICENSE](LICENSE).
+Part of the kapildhinwa2010-dev toolkit experiments. CI and CodeQL run on
+every push to main. License: MIT.

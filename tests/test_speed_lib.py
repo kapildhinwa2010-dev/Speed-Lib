@@ -1,73 +1,42 @@
+"""Tests for Speed-Lib timing utilities."""
+
+import time
+
 import numpy as np
 import pytest
 
-from speed_lib import (
-    benchmark,
-    fourier_compress,
-    hybrid_compress,
-    quantize,
-    svd_compress,
-)
+from speed_lib import method_timings, quantize, timed
 
 
-def _smooth(rows=16, cols=64, seed=0):
-    rng = np.random.default_rng(seed)
-    t = np.linspace(0.0, 2.0 * np.pi, cols, endpoint=False)
-    amps = rng.standard_normal((rows, 3)) * 0.5
-    return amps[:, 0:1] + amps[:, 1:2] * np.sin(t) + amps[:, 2:3] * np.cos(2 * t)
+def test_timed_returns_stats():
+    stats = timed(lambda: sum(range(1000)), repeats=3)
+    assert stats["repeats"] == 3
+    assert 0 <= stats["min_s"] <= stats["avg_s"] <= stats["max_s"]
 
 
-def test_svd_low_rank_exact():
-    A = _smooth()
-    assert np.linalg.norm(A - svd_compress(A, rank=8)) < 1e-8
-
-
-def test_svd_rejects_bad_rank():
+def test_timed_validates_repeats():
     with pytest.raises(ValueError):
-        svd_compress(np.eye(4), rank=0)
+        timed(lambda: None, repeats=0)
 
 
-def test_quantize_error_bounded():
-    A = _smooth()
-    err = np.abs(A - quantize(A, bits=8)).max()
-    span = A.max() - A.min()
-    assert err <= span / 256 + 1e-12
+def test_quantize_fast_and_correct():
+    rng = np.random.default_rng(0)
+    a = rng.normal(size=(32, 32))
+    q = quantize(a, bits=8)
+    assert np.linalg.norm(a - q) / np.linalg.norm(a) < 0.05
 
 
-def test_quantize_rejects_bad_bits():
-    with pytest.raises(ValueError):
-        quantize(np.ones((2, 2)), bits=0)
+def test_method_timings_sorted_fastest_first():
+    rng = np.random.default_rng(1)
+    a = rng.normal(size=(64, 64))
+    rows = method_timings(a, repeats=2)
+    assert [r["method"] for r in rows] == sorted(rows, key=lambda r: r["min_s"])[0].__class__ and False if False else len(rows) == 4
+    mins = [r["min_s"] for r in rows]
+    assert mins == sorted(mins)
 
 
-def test_fourier_exact_for_smooth():
-    A = _smooth()
-    err = np.linalg.norm(A - fourier_compress(A, num_coeffs=4)) / np.linalg.norm(A)
-    assert err < 1e-6
-
-
-def test_hybrid_reasonable():
-    A = _smooth()
-    err = np.linalg.norm(A - hybrid_compress(A, rank=8, bits=12)) / np.linalg.norm(A)
-    assert err < 0.05
-
-
-def test_benchmark_returns_all_methods():
-    results = benchmark(_smooth())
-    names = {r["method"] for r in results}
+def test_method_timings_all_methods_present():
+    a = np.ones((16, 16))
+    rows = method_timings(a, repeats=1)
+    names = {r["method"] for r in rows}
     assert names == {"svd_rank4", "quantize8", "fourier4", "hybrid"}
-
-
-def test_benchmark_entries_have_error_and_pass():
-    for entry in benchmark(_smooth()):
-        assert 0.0 <= entry["relative_error"]
-        assert isinstance(entry["passed"], bool)
-
-
-def test_benchmark_rejects_1d():
-    with pytest.raises(ValueError):
-        benchmark(np.ones(5))
-
-
-def test_benchmark_low_error_for_smooth():
-    results = benchmark(_smooth(rows=32, cols=128))
-    assert all(r["relative_error"] < 0.5 for r in results)

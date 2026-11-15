@@ -1,26 +1,36 @@
-# Speed-Lib - Compression speed library: benchmark methods with timing metrics
+# Speed-Lib - Reusable timing and latency-measurement library
 # Part of the Kapildhinwa2010-dev Toolkit.
 
-"""CompressNet - compression benchmark suite.
+"""Speed-Lib - timing utilities for compression-style workloads.
 
-Lineage: all toolkit repos. Benchmarks four compression strategies (SVD rank,
-Fourier basis, quantization, hybrid) on random and structured matrices and
-reports size reduction vs reconstruction error.
+Provides timed(), a best-of-N wall-clock timer, and method_timings(),
+which times the four toolkit codecs (SVD, quantize, Fourier, hybrid) on
+a matrix so their relative cost can be compared honestly.
+
+Honest limitation: wall-clock timings on a shared machine are noisy;
+always report min-of-N, never a single run.
 """
 
 from __future__ import annotations
 
+import time
+
 import numpy as np
 
-from activation_compress_helpers import fourier_basis  # vendored helper
+__all__ = ["timed", "method_timings", "svd_compress", "quantize",
+           "fourier_compress", "hybrid_compress", "fourier_basis"]
 
-__all__ = [
-    "svd_compress",
-    "quantize",
-    "fourier_compress",
-    "hybrid_compress",
-    "benchmark",
-]
+
+def fourier_basis(n_points: int, num_coeffs: int = 4) -> np.ndarray:
+    """Design matrix [1, sin t, cos t, sin 2t, cos 2t, ...] over one period."""
+    if n_points < 1 or num_coeffs < 1:
+        raise ValueError("n_points and num_coeffs must be >= 1")
+    t = np.linspace(0.0, 2.0 * np.pi, n_points, endpoint=False)
+    cols = [np.ones(n_points)]
+    for k in range(1, num_coeffs + 1):
+        cols.append(np.sin(k * t))
+        cols.append(np.cos(k * t))
+    return np.stack(cols, axis=1)
 
 
 def _check(matrix: np.ndarray) -> np.ndarray:
@@ -56,7 +66,7 @@ def fourier_compress(matrix: np.ndarray, num_coeffs: int = 4) -> np.ndarray:
         raise ValueError("num_coeffs must be >= 1")
     basis = fourier_basis(matrix.shape[1], num_coeffs)
     coeffs, _, _, _ = np.linalg.lstsq(basis, matrix.T, rcond=None)
-    return (coeffs.T @ basis.T)
+    return coeffs.T @ basis.T
 
 
 def hybrid_compress(matrix: np.ndarray, rank: int = 4, bits: int = 8) -> np.ndarray:
@@ -64,22 +74,41 @@ def hybrid_compress(matrix: np.ndarray, rank: int = 4, bits: int = 8) -> np.ndar
     return quantize(svd_compress(matrix, rank=rank), bits=bits)
 
 
-def benchmark(matrix: np.ndarray) -> list:
-    """Run all methods; return dicts with method, error and storage estimate."""
-    matrix = _check(matrix)
-    results = []
-    methods = {
-        "svd_rank4": svd_compress(matrix, rank=4),
-        "quantize8": quantize(matrix, bits=8),
-        "fourier4": fourier_compress(matrix, num_coeffs=4),
-        "hybrid": hybrid_compress(matrix, rank=4, bits=8),
+def timed(func, repeats: int = 5) -> dict:
+    """Run func() repeats times; return min/avg/max wall-clock seconds.
+
+    min_s is the honest number to report; avg and max show noise.
+    """
+    if repeats < 1:
+        raise ValueError("repeats must be >= 1")
+    samples = []
+    for _ in range(repeats):
+        start = time.perf_counter()
+        func()
+        samples.append(time.perf_counter() - start)
+    return {
+        "repeats": repeats,
+        "min_s": min(samples),
+        "avg_s": sum(samples) / len(samples),
+        "max_s": max(samples),
     }
-    norm = float(np.linalg.norm(matrix))
-    for name, approx in methods.items():
-        rel_error = float(np.linalg.norm(matrix - approx)) / norm if norm else 0.0
-        results.append({
-            "method": name,
-            "relative_error": rel_error,
-            "passed": rel_error < 0.5,
-        })
-    return results
+
+
+def method_timings(matrix: np.ndarray, repeats: int = 3) -> list:
+    """Time all four codecs on matrix; list of dicts sorted fastest first."""
+    matrix = _check(matrix)
+    if repeats < 1:
+        raise ValueError("repeats must be >= 1")
+    methods = {
+        "svd_rank4": lambda: svd_compress(matrix, rank=4),
+        "quantize8": lambda: quantize(matrix, bits=8),
+        "fourier4": lambda: fourier_compress(matrix, num_coeffs=4),
+        "hybrid": lambda: hybrid_compress(matrix, rank=4, bits=8),
+    }
+    rows = []
+    for name, func in methods.items():
+        stats = timed(func, repeats=repeats)
+        rows.append({"method": name, "min_s": stats["min_s"],
+                     "avg_s": stats["avg_s"]})
+    rows.sort(key=lambda row: row["min_s"])
+    return rows
